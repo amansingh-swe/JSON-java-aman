@@ -4,12 +4,6 @@ package org.json.junit;
 Public Domain.
 */
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotEquals;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
-
 import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
@@ -26,6 +20,8 @@ import org.json.*;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
+
+import static org.junit.Assert.*;
 
 
 /**
@@ -52,6 +48,126 @@ public class XMLTest {
         assertTrue("jsonObject should be empty", jsonObject.isEmpty());
     }
 
+    // NEW  TEST CASESS START HERE
+    @Test
+    public void testBasicPathExtraction() throws Exception {
+        // Arrange
+        String xml = "<root><person><n>John</n><age>30</age></person></root>";
+        StringReader reader = new StringReader(xml);
+        JSONPointer path = new JSONPointer("/root/person");
+
+        // Act
+        JSONObject result = XML.toJSONObject(reader, path);
+
+        // Assert
+        assertNotNull("Result should not be null", result);
+        assertEquals("Result should contain name", "John", result.getString("n"));
+        assertEquals("Result should contain age", 30, result.getInt("age"));
+    }
+
+    @Test
+    public void testTrailingSlashNormalization() throws Exception {
+        // Arrange
+        String xml = "<root><data><items><item id=\"1\">First</item><item id=\"2\">Second</item></items></data></root>";
+        StringReader reader = new StringReader(xml);
+        JSONPointer path = new JSONPointer("/root/data/items/"); // Note the trailing slash
+
+        // Act
+        JSONObject result = XML.toJSONObject(reader, path);
+
+        // Assert
+        assertNotNull("Result should not be null", result);
+        assertTrue("Result should contain item information", result.has("item"));
+    }
+
+    @Test
+    public void testEmptyPath() throws Exception {
+        // Arrange
+        String xml = "<root><simple>value</simple></root>";
+        StringReader reader = new StringReader(xml);
+        JSONPointer path = new JSONPointer(""); // Empty path
+
+        // Act
+        JSONObject result = XML.toJSONObject(reader, path);
+
+        // Assert
+        assertNotNull("Result should not be null", result);
+        assertTrue("Should return the root element", result.has("root"));
+        JSONObject root = result.getJSONObject("root");
+        assertEquals("Root should contain simple element with value", "value", root.getString("simple"));
+    }
+
+    @Test(expected = JSONException.class)
+    public void testPathNotFound() throws Exception {
+        // Arrange
+        String xml = "<root><data>value</data></root>";
+        StringReader reader = new StringReader(xml);
+        JSONPointer path = new JSONPointer("/root/nonexistent");
+
+        // Act - this should throw JSONException
+        JSONObject result = XML.toJSONObject(reader, path);
+    }
+
+    @Test
+    public void testReplaceEntireDocument() throws Exception {
+        // Arrange
+        String xml = "<root><data>value</data></root>";
+        StringReader reader = new StringReader(xml);
+        JSONPointer path = new JSONPointer(""); // Empty path
+        JSONObject replacement = new JSONObject()
+                .put("newRoot", new JSONObject()
+                        .put("newData", "newValue"));
+
+        // Act
+        JSONObject result = XML.toJSONObject(reader, path, replacement);
+
+        // Assert
+        assertNotNull("Result should not be null", result);
+        assertTrue("Result should contain new root", result.has("newRoot"));
+        JSONObject newRoot = result.getJSONObject("newRoot");
+        assertEquals("New root should contain new data", "newValue", newRoot.getString("newData"));
+    }
+
+    @Test
+    public void testReplaceNestedElement() throws Exception {
+        // Arrange
+        String xml = "<root><parent><child1>value1</child1><child2>value2</child2></parent></root>";
+        StringReader reader = new StringReader(xml);
+        JSONPointer path = new JSONPointer("/root/parent/child1");
+        JSONObject replacement = new JSONObject().put("updatedValue", "replaced");
+
+        // Act
+        JSONObject result = XML.toJSONObject(reader, path, replacement);
+
+        // Assert
+        assertNotNull("Result should not be null", result);
+        assertTrue("Result should contain parent", result.getJSONObject("root").has("parent"));
+        JSONObject parent = result.getJSONObject("root").getJSONObject("parent");
+        assertTrue("Parent should contain child1", parent.has("child1"));
+        assertEquals("Child1 should be replaced", replacement.toString(), parent.get("child1").toString());
+        assertEquals("Child2 should remain unchanged", "value2", parent.getString("child2"));
+    }
+
+    @Test
+    public void testReplaceDeepNestedElement() throws Exception {
+        // Arrange
+        String xml = "<root><level1><level2><level3><target>original</target></level3></level2></level1></root>";
+        StringReader reader = new StringReader(xml);
+        JSONPointer path = new JSONPointer("/root/level1/level2/level3/target");
+        JSONObject replacement = new JSONObject().put("newContent", "deep replacement");
+
+        JSONObject result = XML.toJSONObject(reader, path, replacement);
+
+        assertNotNull("Result should not be null", result);
+        Object target = result.getJSONObject("root")
+                .getJSONObject("level1")
+                .getJSONObject("level2")
+                .getJSONObject("level3")
+                .get("target");
+        assertEquals("Deep target should be replaced", replacement.toString(), target.toString());
+    }
+
+    // NEW TEST CASES END HERE
     /**
      * Empty JSONObject from an empty XML string.
      */

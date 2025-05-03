@@ -662,6 +662,158 @@ public class XML {
         return toJSONObject(string, XMLParserConfiguration.ORIGINAL);
     }
 
+
+    public static JSONObject toJSONObject(Reader reader, JSONPointer path) throws JSONException {
+
+        String pathStr = path.toString();
+        if (pathStr.endsWith("/")) {
+            pathStr = pathStr.substring(0, pathStr.length() - 1);
+            path = new JSONPointer(pathStr);
+        }
+
+        if (path.toString().length() == 0) {
+            return toJSONObject(reader);
+        }
+
+        JSONObject tempObject = new JSONObject();
+
+        JSONObject result = null;
+        boolean foundPath = false;
+
+        XMLParserConfiguration config = XMLParserConfiguration.ORIGINAL;
+        XMLTokener x = new XMLTokener(reader, config);
+
+        while (x.more() && !foundPath) {
+            x.skipPast("<");
+            if (!x.more()) {
+                break;
+            }
+            parse(x, tempObject, null, config, 0);
+
+            try {
+                Object pathResult = path.queryFrom(tempObject);
+                if (pathResult != null) {
+                    foundPath = true;
+
+                    if (pathResult instanceof JSONObject) {
+                        result = (JSONObject) pathResult;
+                    }
+
+                    break;
+                }
+            } catch (JSONPointerException e) {
+            }
+
+        }
+
+        if (foundPath && result != null) {
+            return result;
+        }
+
+        throw new JSONException("Path not found: " + path);
+    }
+
+    public static JSONObject toJSONObject(Reader reader, JSONPointer path, JSONObject replacement) throws JSONException {
+        if (path.toString().isEmpty() || path.toString().equals("/")) {
+            XMLTokener x = new XMLTokener(reader, XMLParserConfiguration.ORIGINAL);
+            if (!x.more()) {
+                throw new JSONException("Empty XML document");
+            }
+            return replacement;
+        }
+
+        String pathStr = path.toString();
+        boolean hasTrailingSlash = pathStr.endsWith("/");
+        if (hasTrailingSlash) {
+            pathStr = pathStr.substring(0, pathStr.length() - 1);
+            path = new JSONPointer(pathStr);
+        }
+
+        String[] pathSegments = getPathSegments(path.toString());
+
+        JSONObject result = new JSONObject();
+
+        XMLParserConfiguration config = XMLParserConfiguration.ORIGINAL;
+        XMLTokener x = new XMLTokener(reader, config);
+
+        while (x.more()) {
+            x.skipPast("<");
+            if (!x.more()) {
+                break;
+            }
+
+            parse(x, result, null, config, 0);
+
+            try {
+                JSONPointer parentPath = getParentPath(path);
+                Object parent = parentPath.queryFrom(result);
+
+                if (parent instanceof JSONObject) {
+                    String lastSegment = pathSegments[pathSegments.length - 1];
+
+                    Object originalValue = ((JSONObject) parent).opt(lastSegment);
+
+                    if (hasTrailingSlash && originalValue != null) {
+
+                        if (replacement.length() == 1) {
+                            String firstKey = replacement.keys().next();
+                            ((JSONObject) parent).put(lastSegment, replacement.get(firstKey));
+                        } else {
+                            ((JSONObject) parent).put(lastSegment, replacement);
+                        }
+                    } else {
+                        ((JSONObject) parent).put(lastSegment, replacement);
+                    }
+
+                    break;
+                }
+            } catch (JSONPointerException e) {
+            }
+        }
+
+        try {
+            path.queryFrom(result);
+            return result;
+        } catch (JSONPointerException e) {
+            throw new JSONException("Path not found: Error replacing" + path);
+        }
+    }
+    //To get parent of the json pointer
+    private static JSONPointer getParentPath(JSONPointer pointer) {
+        String pathStr = pointer.toString();
+        int lastSlash = pathStr.lastIndexOf('/');
+
+        if (lastSlash <= 0) {
+            return new JSONPointer("");
+        }
+
+        return new JSONPointer(pathStr.substring(0, lastSlash));
+    }
+
+    //seperate path string to path arrays
+    private static String[] getPathSegments(String pathStr) {
+        if (pathStr == null || pathStr.isEmpty()) {
+            return new String[0];
+        }
+
+        if (pathStr.startsWith("/")) {
+            pathStr = pathStr.substring(1);
+        }
+
+        if (pathStr.endsWith("/")) {
+            pathStr = pathStr.substring(0, pathStr.length() - 1);
+        }
+
+        if (pathStr.isEmpty()) {
+            return new String[0];
+        }
+
+        String[] parts = pathStr.split("/");
+
+        return parts;
+    }
+
+
     /**
      * Convert a well-formed (but not necessarily valid) XML into a
      * JSONObject. Some information may be lost in this transformation because
